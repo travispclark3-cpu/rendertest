@@ -1,0 +1,31 @@
+kind = "web"
+previewPath = "/"
+title = "MARKETV.live"
+version = "1.0.0"
+id = "artifacts/mktv"
+router = "path"
+
+[[integratedSkills]]
+name = "react-vite"
+version = "1.0.0"
+
+[[services]]
+name = "web"
+paths = [ "/" ]
+localPort = 24480
+
+[services.development]
+run = "pnpm --filter @workspace/mktv run dev"
+
+[services.production]
+build = [ "pnpm", "--filter", "@workspace/mktv", "run", "build" ]
+publicDir = "artifacts/mktv/dist/public"
+serve = "static"
+
+[[services.production.rewrites]]
+from = "/*"
+to = "/index.html"
+
+[services.env]
+PORT = "24480"
+BASE_PATH = "/"

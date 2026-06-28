@@ -1,0 +1,9 @@
+{
+  "framework": null,
+  "installCommand": "pnpm install --frozen-lockfile",
+  "buildCommand": "pnpm --filter @workspace/mktv run build && mkdir -p public && cp -r artifacts/mktv/dist/public/. public/",
+  "outputDirectory": "public",
+  "rewrites": [
+    { "source": "/(.*)", "destination": "/index.html" }
+  ]
+}

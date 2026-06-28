@@ -1,0 +1,15 @@
+# Render free tier — deploy the API server from GitHub (no credit card).
+# Dashboard: New → Blueprint → connect repo, or New → Web Service → Docker.
+# Free tier sleeps after 15 min idle; ping /api/healthz every 14 min to stay warm
+# (free options: cron-job.org, UptimeRobot, etc.).
+
+services:
+  - type: web
+    name: mktv-api
+    runtime: docker
+    plan: free
+    dockerfilePath: ./Dockerfile
+    healthCheckPath: /api/healthz
+    envVars:
+      - key: NODE_ENV
+        value: production

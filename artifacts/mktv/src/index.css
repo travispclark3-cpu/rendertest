@@ -1,0 +1,307 @@
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --bg:  #04060a;
+  --bg2: #080d14;
+  --bdr: #1a2030;
+  --txt: #8a9ab8;
+  --dim: #4a5570;
+  --wht: #e8edf5;
+  --grn: #22c97a;
+  --red: #e84444;
+  --bar-h: 36px;
+}
+
+html, body, #root {
+  height: 100%;
+  background: var(--bg);
+  color: var(--wht);
+  font-family: 'Inter', sans-serif;
+  font-size: 12px;
+  overflow: hidden;
+}
+
+/* ── Top bar ──────────────────────────────────────────────────────────── */
+#bar {
+  height: var(--bar-h);
+  min-height: var(--bar-h);
+  display: flex;
+  align-items: center;
+  padding: 0 12px;
+  gap: 10px;
+  background: var(--bg);
+  border-bottom: 1px solid var(--bdr);
+  flex-shrink: 0;
+  overflow: hidden;
+}
+
+#logo {
+  font-family: 'IBM Plex Mono', monospace;
+  font-weight: 600;
+  font-size: 13px;
+  letter-spacing: 0.04em;
+  color: #fff;
+  white-space: nowrap;
+}
+#logo span { color: var(--dim); }
+#logo .live-flash {
+  color: var(--red);
+  animation: pulse 1.4s ease-in-out infinite;
+}
+
+.sp { flex: 1; }
+
+
+#aud {
+  font-size: 10px;
+  color: var(--dim);
+  white-space: nowrap;
+}
+#aud b { color: var(--wht); }
+
+/* ── 2×2 panel grid ───────────────────────────────────────────────────── */
+#grid {
+  flex: 1;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  grid-template-rows: 1fr 1fr;
+  gap: 2px;
+  background: #000;
+  overflow: hidden;
+  min-height: 0;
+}
+
+/* ── Individual panel ─────────────────────────────────────────────────── */
+.panel {
+  position: relative;
+  background: var(--bg2);
+  overflow: hidden;
+}
+
+.panel.maximized {
+  position: fixed;
+  inset: var(--bar-h) 0 0 0;
+  z-index: 100;
+}
+
+/* ── Offline / loading overlay ────────────────────────────────────────── */
+.offscreen {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  background: var(--bg2);
+  z-index: 2;
+  padding: 16px;
+  text-align: center;
+}
+
+.off-icon {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: rgba(255,255,255,.06);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--dim);
+}
+.off-icon.spinning {
+  animation: spin 1s linear infinite;
+}
+
+.off-lbl {
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  color: var(--wht);
+  text-transform: uppercase;
+}
+.off-msg {
+  font-size: 10px;
+  color: var(--dim);
+  line-height: 1.5;
+}
+
+.yt-link {
+  margin-top: 4px;
+  display: inline-block;
+  padding: 4px 10px;
+  border: 1px solid rgba(34,201,122,.4);
+  border-radius: 4px;
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 9px;
+  letter-spacing: 0.06em;
+  color: var(--grn);
+  text-decoration: none;
+  transition: border-color .15s, color .15s, background .15s;
+}
+.yt-link:hover { border-color: var(--grn); background: rgba(34,201,122,.08); color: #fff; }
+
+/* ── Bottom control bar ───────────────────────────────────────────────── */
+.ov {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  padding: 0 8px;
+  gap: 6px;
+  background: linear-gradient(transparent, rgba(0,0,0,.75));
+  z-index: 3;
+  opacity: 0;
+  transition: opacity .2s;
+}
+.panel:hover .ov { opacity: 1; }
+.panel.on .ov     { opacity: 1; }
+
+/* Chart mode: overlay pinned bottom-right, always slightly visible */
+.panel.chart-mode .ov {
+  left: auto;
+  right: 0;
+  width: auto;
+  background: rgba(0,0,0,.35);
+  height: 34px;
+  padding: 0 6px;
+  border-radius: 6px 0 0 0;
+  opacity: 0.55;
+}
+.panel.chart-mode:hover .ov { opacity: 0.55; }
+.panel.chart-mode .ov:hover { opacity: 1; }
+
+.oname {
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  color: rgba(255,255,255,.85);
+  text-transform: uppercase;
+  line-height: 1.2;
+  flex: 1;
+}
+
+.live-badge {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 8px;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  color: #fff;
+  background: var(--red);
+  border-radius: 3px;
+  padding: 1px 5px;
+}
+
+.btn {
+  width: 24px;
+  height: 24px;
+  border-radius: 4px;
+  background: rgba(255,255,255,.08);
+  border: none;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: rgba(255,255,255,.6);
+  transition: background .15s, color .15s;
+  flex-shrink: 0;
+}
+.btn:hover { background: rgba(255,255,255,.18); color: #fff; }
+.btn.on   { background: rgba(255,255,255,.2);  color: #fff; }
+
+/* ── News panel ───────────────────────────────────────────────────────── */
+.panel.news {
+  outline: 2px solid rgba(255,255,255,0.25);
+  outline-offset: -2px;
+}
+
+.news-badge-corner {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  z-index: 4;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.news-badge-text {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  color: #fff;
+  background: rgba(255,255,255,0.13);
+  border: 1px solid rgba(255,255,255,0.32);
+  border-radius: 3px;
+  padding: 3px 8px;
+}
+
+.news-menu-btn {
+  width: 22px;
+  height: 22px;
+  border-radius: 3px;
+  background: rgba(255,255,255,0.1);
+  border: 1px solid rgba(255,255,255,0.25);
+  color: rgba(255,255,255,0.7);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: background .15s, color .15s;
+}
+.news-menu-btn:hover { background: rgba(255,255,255,0.22); color: #fff; }
+
+.news-dropdown {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  background: #0d1420;
+  border: 1px solid rgba(255,255,255,0.18);
+  border-radius: 5px;
+  padding: 4px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 80px;
+  box-shadow: 0 4px 16px rgba(0,0,0,0.5);
+  z-index: 10;
+}
+
+.news-dropdown-item {
+  padding: 5px 10px;
+  border-radius: 3px;
+  border: none;
+  background: transparent;
+  color: rgba(255,255,255,0.6);
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-align: left;
+  cursor: pointer;
+  transition: background .12s, color .12s;
+}
+.news-dropdown-item:hover { background: rgba(255,255,255,0.1); color: #fff; }
+.news-dropdown-item.active { color: #fff; background: rgba(255,255,255,0.15); }
+
+/* ── Ticker tape ──────────────────────────────────────────────────────── */
+@keyframes scroll {
+  from { transform: translateX(0); }
+  to   { transform: translateX(-50%); }
+}
+
+/* ── Hide Lightweight Charts attribution logo ─────────────────────────── */
+a#tv-attr-logo { display: none !important; }
+
+/* ── Animations ───────────────────────────────────────────────────────── */
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: .35; }
+}
