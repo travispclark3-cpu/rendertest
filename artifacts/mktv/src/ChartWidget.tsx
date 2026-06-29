@@ -22,7 +22,6 @@ interface Sym { symbol: string; display: string; name: string; }
 
 const DEFAULT: Sym = { symbol: "^GSPC", display: "SPX", name: "S&P 500" };
 const CHART_TZ = "America/New_York";
-const ALL_RANGE_IDX = RANGES.length - 1;
 
 function formatChartTime(ts: number, withTime: boolean): string {
   return new Intl.DateTimeFormat("en-US", {
@@ -63,9 +62,10 @@ export default function ChartWidget({ panelKey }: { panelKey: string }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const chartRef     = useRef<IChartApi | null>(null);
   const seriesRef    = useRef<ISeriesApi<"Area"> | null>(null);
+  const fitKeyRef    = useRef("");
 
   const [sym,      setSym]      = usePersistedSym(panelKey);
-  const [rangeIdx, setRangeIdx] = useState(ALL_RANGE_IDX);
+  const [rangeIdx, setRangeIdx] = useState(0);
   const [data,     setData]     = useState<ChartData | null>(null);
   const [loading,  setLoading]  = useState(true);
   const [error,    setError]    = useState(false);
@@ -83,7 +83,7 @@ export default function ChartWidget({ panelKey }: { panelKey: string }) {
   /* ── Create chart once ─────────────────────────────────────────────────── */
   useEffect(() => {
     if (!containerRef.current) return;
-    const tzOpts = chartTimeOptions(false);
+    const tzOpts = chartTimeOptions(true);
     const chart = createChart(containerRef.current, {
       layout: {
         background: { type: ColorType.Solid, color: "#080d14" },
@@ -144,7 +144,11 @@ export default function ChartWidget({ panelKey }: { panelKey: string }) {
         }
         if (chartRef.current) {
           chartRef.current.applyOptions(chartTimeOptions(rng.timeVisible));
-          chartRef.current.timeScale().fitContent();
+          const fitKey = `${sym.symbol}:${rng.range}:${rng.interval}`;
+          if (fitKeyRef.current !== fitKey) {
+            fitKeyRef.current = fitKey;
+            requestAnimationFrame(() => chartRef.current?.timeScale().fitContent());
+          }
         }
       } catch {
         if (!cancelled) setError(true);
