@@ -21,6 +21,26 @@ interface Hit { symbol: string; display: string; name: string; type: string; }
 interface Sym { symbol: string; display: string; name: string; }
 
 const DEFAULT: Sym = { symbol: "^GSPC", display: "SPX", name: "S&P 500" };
+const CHART_TZ = "America/New_York";
+const ALL_RANGE_IDX = RANGES.length - 1;
+
+function formatChartTime(ts: number, withTime: boolean): string {
+  return new Intl.DateTimeFormat("en-US", {
+    timeZone: CHART_TZ,
+    ...(withTime
+      ? { hour: "2-digit", minute: "2-digit", hour12: false }
+      : { month: "short", day: "numeric", year: "2-digit" }),
+  }).format(new Date(ts * 1000));
+}
+
+function chartTimeOptions(timeVisible: boolean) {
+  const fmt = (time: unknown) =>
+    typeof time === "number" ? formatChartTime(time, timeVisible) : String(time);
+  return {
+    timeScale: { timeVisible, tickMarkFormatter: fmt },
+    localization: { timeFormatter: fmt },
+  };
+}
 
 function usePersistedSym(key: string): [Sym, (s: Sym) => void] {
   const [sym, setSym] = useState<Sym>(() => {
@@ -45,7 +65,7 @@ export default function ChartWidget({ panelKey }: { panelKey: string }) {
   const seriesRef    = useRef<ISeriesApi<"Area"> | null>(null);
 
   const [sym,      setSym]      = usePersistedSym(panelKey);
-  const [rangeIdx, setRangeIdx] = useState(0);
+  const [rangeIdx, setRangeIdx] = useState(ALL_RANGE_IDX);
   const [data,     setData]     = useState<ChartData | null>(null);
   const [loading,  setLoading]  = useState(true);
   const [error,    setError]    = useState(false);
@@ -63,6 +83,7 @@ export default function ChartWidget({ panelKey }: { panelKey: string }) {
   /* ── Create chart once ─────────────────────────────────────────────────── */
   useEffect(() => {
     if (!containerRef.current) return;
+    const tzOpts = chartTimeOptions(false);
     const chart = createChart(containerRef.current, {
       layout: {
         background: { type: ColorType.Solid, color: "#080d14" },
@@ -75,7 +96,8 @@ export default function ChartWidget({ panelKey }: { panelKey: string }) {
         horzLines: { color: "#1a2030" },
       },
       rightPriceScale: { borderColor: "#1a2030" },
-      timeScale:        { borderColor: "#1a2030", timeVisible: true, secondsVisible: false },
+      timeScale:        { borderColor: "#1a2030", secondsVisible: false, ...tzOpts.timeScale },
+      localization:     tzOpts.localization,
       crosshair: {
         vertLine: { color: "#4a5570", labelBackgroundColor: "#1a2030" },
         horzLine: { color: "#4a5570", labelBackgroundColor: "#1a2030" },
@@ -121,7 +143,7 @@ export default function ChartWidget({ panelKey }: { panelKey: string }) {
           );
         }
         if (chartRef.current) {
-          chartRef.current.timeScale().updateOptions({ timeVisible: rng.timeVisible });
+          chartRef.current.applyOptions(chartTimeOptions(rng.timeVisible));
           chartRef.current.timeScale().fitContent();
         }
       } catch {
