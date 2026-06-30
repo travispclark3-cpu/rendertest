@@ -158,7 +158,7 @@ export default function ChartWidget({ panelKey }: { panelKey: string }) {
     }
 
     load();
-    const iv = setInterval(load, 30_000);
+    const iv = setInterval(load, 5_000);
     return () => { cancelled = true; clearInterval(iv); };
   }, [sym.symbol, rng.interval, rng.range, rng.timeVisible]);
 
@@ -286,7 +286,7 @@ export default function ChartWidget({ panelKey }: { panelKey: string }) {
             <span style={{ ...mono, fontSize: 10, color: clr }}>
               {sign}{data.change.toFixed(2)}&nbsp;({sign}{data.changePct.toFixed(2)}%)
             </span>
-            <span style={{ ...mono, fontSize: 9, color: "#333", marginLeft: "auto" }}>~30s delay</span>
+            <span style={{ ...mono, fontSize: 9, color: "#333", marginLeft: "auto" }}>5s refresh</span>
           </>
         )}
         {loading && !data && (
