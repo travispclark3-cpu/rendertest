@@ -40,6 +40,8 @@ const CHANNELS = [
     key: "bloomberg", name: "BLOOMBERG",  label: "Bloomberg\nTelevision",
     schedule: null,
     ytUrl: "https://www.youtube.com/@markets",
+    channelId: "UCIALMKvObZNtJ6AmdCLP7Lg",
+    useLiveChannel: true,
   },
   {
     key: "schwab",    name: "SCHWAB NET.", label: "Schwab\nNetwork",
@@ -406,14 +408,24 @@ function Panel({ idx, ch, videoId, channelId, isActive, onSetAudio, subChannels,
   const mountRef       = useRef<HTMLDivElement>(null);
   const playerRef      = useRef<YT.Player | null>(null);
   const isActiveRef    = useRef(isActive);
-  // Use channel-based iframe when no videoId but channelId available
-  const useChannelEmbed = !videoId && !!channelId;
+  // Prefer live channel embed when configured (always current broadcast)
+  const useLiveChannel = "useLiveChannel" in ch && ch.useLiveChannel;
+  const useChannelEmbed = !!channelId && (!videoId || useLiveChannel);
   const [status, setStatus]       = useState<Status>(videoId || useChannelEmbed ? "loading" : "offline");
   const [playing, setPlaying]     = useState(false);
   const [maximized, setMaximized] = useState(false);
   const [menuOpen, setMenuOpen]   = useState(false);
+  const [embedMuted, setEmbedMuted] = useState(true);
 
   useEffect(() => { isActiveRef.current = isActive; }, [isActive]);
+
+  useEffect(() => {
+    if (useChannelEmbed) setEmbedMuted(true);
+  }, [channelId, useChannelEmbed]);
+
+  useEffect(() => {
+    if (useChannelEmbed && !isActive) setEmbedMuted(true);
+  }, [isActive, useChannelEmbed]);
 
   useEffect(() => {
     if (mode === "chart") {
@@ -461,8 +473,12 @@ function Panel({ idx, ch, videoId, channelId, isActive, onSetAudio, subChannels,
           playsinline: 1,
         } as YT.PlayerVars,
         events: {
-          onReady() {
+          onReady(e: YT.PlayerEvent) {
             if (cancelled) return;
+            try {
+              e.target.mute();
+              e.target.playVideo();
+            } catch { /* ignore */ }
             setStatus("live");
           },
           onError() {
@@ -474,9 +490,9 @@ function Panel({ idx, ch, videoId, channelId, isActive, onSetAudio, subChannels,
             if (e.data === window.YT.PlayerState.PLAYING) {
               setStatus("live");
               setPlaying(true);
-              try {
-                isActiveRef.current ? e.target.unMute() : e.target.mute();
-              } catch { /* ignore */ }
+              if (!isActiveRef.current) {
+                try { e.target.mute(); } catch { /* ignore */ }
+              }
             }
             if (e.data === window.YT.PlayerState.PAUSED ||
                 e.data === window.YT.PlayerState.BUFFERING) {
@@ -500,9 +516,11 @@ function Panel({ idx, ch, videoId, channelId, isActive, onSetAudio, subChannels,
   }, [videoId, idx, useChannelEmbed]);
 
   useEffect(() => {
-    if (!playerRef.current || status !== "live") return;
-    try { isActive ? playerRef.current.unMute() : playerRef.current.mute(); } catch { /* not ready */ }
-  }, [isActive, status]);
+    if (!playerRef.current || useChannelEmbed) return;
+    if (!isActive) {
+      try { playerRef.current.mute(); } catch { /* not ready */ }
+    }
+  }, [isActive, useChannelEmbed]);
 
   function toggleMax() { setMaximized(m => !m); }
 
@@ -518,9 +536,9 @@ function Panel({ idx, ch, videoId, channelId, isActive, onSetAudio, subChannels,
       ? `https://www.youtube.com/watch?v=${videoId}`
       : ch.ytUrl;
 
-  // Channel embed URL (muted unless active — YouTube embed autoplay requires mute)
+  // Channel embed URL (muted on load for autoplay; unmute after user selects audio)
   const channelEmbedSrc = channelId
-    ? `https://www.youtube.com/embed/live_stream?channel=${channelId}&autoplay=1&mute=1&controls=1&rel=0`
+    ? `https://www.youtube.com/embed/live_stream?channel=${channelId}&autoplay=1&mute=${embedMuted ? 1 : 0}&controls=1&rel=0`
     : "";
 
   return (
@@ -635,7 +653,12 @@ function Panel({ idx, ch, videoId, channelId, isActive, onSetAudio, subChannels,
         {mode === "stream" && (
           <button
             className={`btn${isActive ? " on" : ""}`}
-            onClick={(e) => { e.stopPropagation(); onSetAudio(idx); }}
+            onClick={(e) => {
+              e.stopPropagation();
+              onSetAudio(idx);
+              if (useChannelEmbed) setEmbedMuted(false);
+              else try { playerRef.current?.unMute(); } catch { /* not ready */ }
+            }}
             title={isActive ? "Audio on" : "Switch audio here"}
           >
             {isActive ? (
@@ -739,7 +762,7 @@ export default function App() {
               idx={i}
               ch={ch}
               videoId={videoId}
-              channelId={isNewsSlot ? activeSub?.channelId : undefined}
+              channelId={isNewsSlot ? activeSub?.channelId : ("channelId" in ch ? ch.channelId : undefined)}
               isActive={i === active}
               onSetAudio={setActive}
               subChannels={isNewsSlot ? NEWS_SUBS : undefined}
