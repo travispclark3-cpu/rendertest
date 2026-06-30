@@ -198,7 +198,7 @@ function TickerTape({ tickers }: { tickers: SavedTicker[] }) {
           <TickerItem key={i} sym={sym} val={val} chg={chg} dir={dir} />
         ))}
       </div>
-      <div style={{ display: "flex", animation: "scroll 50s linear infinite", whiteSpace: "nowrap" }}>
+      <div style={{ display: "flex", animation: "scroll 90s linear infinite", whiteSpace: "nowrap" }}>
         {doubled.map(([sym, val, chg, dir], i) => (
           <TickerItem key={i} sym={sym} val={val} chg={chg} dir={dir} />
         ))}
