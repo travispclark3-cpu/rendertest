@@ -714,7 +714,7 @@ export default function App() {
   return (
     <div style={{ display: "flex", flexDirection: "column", height: "100dvh", overflow: "hidden" }}>
       <div id="bar">
-        <div id="logo">MARKETV<span className="live-flash">.live</span></div>
+        <div id="logo">DEMO<span className="live-flash">.live</span></div>
         <div className="sp" />
         <div id="aud">AUDIO&nbsp;<b>{audioName}</b></div>
         <ClockET />
