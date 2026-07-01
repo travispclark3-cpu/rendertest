@@ -27,7 +27,6 @@ function loadYTApi(): Promise<void> {
 /* ─── Channels ────────────────────────────────────────────────────────────── */
 const FALLBACK_IDS: Record<string, string> = {
   bloomberg: "QB5BNdBFujE",
-  schwab:    "THKWCO6ZNts",
   yahoo:     "KQp-e_XQnDE",
   nbc:       "",
   cbs:       "",
@@ -42,11 +41,6 @@ const CHANNELS = [
     ytUrl: "https://www.youtube.com/@markets",
     channelId: "UCIALMKvObZNtJ6AmdCLP7Lg",
     useLiveChannel: true,
-  },
-  {
-    key: "schwab",    name: "SCHWAB NET.", label: "Schwab\nNetwork",
-    schedule: null,
-    ytUrl: "https://www.youtube.com/@SchwabNetwork",
   },
   {
     key: "yahoo",     name: "YAHOO FIN.", label: "Yahoo Finance",
@@ -709,24 +703,26 @@ export default function App() {
             const videoId    = isNewsSlot ? (ids[newsSub] ?? "") : (ids[ch.key] ?? "");
             const activeSub  = isNewsSlot ? NEWS_SUBS.find(s => s.key === newsSub) : undefined;
             return (
-              <Panel
-                key={ch.key}
-                idx={i}
-                ch={ch}
-                videoId={videoId}
-                channelId={isNewsSlot ? activeSub?.channelId : ("channelId" in ch ? ch.channelId : undefined)}
-                isActive={i === active}
-                onSetAudio={setActive}
-                subChannels={isNewsSlot ? NEWS_SUBS : undefined}
-                selectedSub={isNewsSlot ? newsSub : undefined}
-                onSelectSub={isNewsSlot ? (k) => setNewsSub(k as NewsSub) : undefined}
-              />
+              <React.Fragment key={ch.key}>
+                {i === 1 && (
+                  <div id="chart-panel">
+                    <ChartWidget />
+                  </div>
+                )}
+                <Panel
+                  idx={i}
+                  ch={ch}
+                  videoId={videoId}
+                  channelId={isNewsSlot ? activeSub?.channelId : ("channelId" in ch ? ch.channelId : undefined)}
+                  isActive={i === active}
+                  onSetAudio={setActive}
+                  subChannels={isNewsSlot ? NEWS_SUBS : undefined}
+                  selectedSub={isNewsSlot ? newsSub : undefined}
+                  onSelectSub={isNewsSlot ? (k) => setNewsSub(k as NewsSub) : undefined}
+                />
+              </React.Fragment>
             );
           })}
-        </div>
-
-        <div id="chart-panel">
-          <ChartWidget />
         </div>
       </div>
 

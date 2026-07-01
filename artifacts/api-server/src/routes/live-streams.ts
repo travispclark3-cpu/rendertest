@@ -17,12 +17,6 @@ const CHANNELS: ChannelConfig[] = [
     alwaysOn: true,
   },
   {
-    name: "schwab",
-    channelUrl: "https://www.youtube.com/@SchwabNetwork/live",
-    fallbackVideoId: "THKWCO6ZNts",
-    alwaysOn: true,
-  },
-  {
     name: "yahoo",
     channelUrl: "https://www.youtube.com/@YahooFinance/live",
     fallbackVideoId: "",

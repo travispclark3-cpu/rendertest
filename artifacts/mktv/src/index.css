@@ -81,12 +81,9 @@ html, body, #root {
 }
 
 #chart-panel {
-  flex-shrink: 0;
-  height: 32vh;
-  min-height: 180px;
-  max-height: 320px;
-  border-top: 2px solid #000;
   overflow: hidden;
+  background: var(--bg2);
+  min-height: 0;
 }
 
 /* ── Individual panel ─────────────────────────────────────────────────── */

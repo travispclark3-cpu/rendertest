@@ -29,8 +29,6 @@ interface ChartSym { symbol: string; display: string; name: string; color: strin
 
 const DEFAULT_SYMBOLS: ChartSym[] = [
   { symbol: "^GSPC", display: "SPX", name: "S&P 500", color: CHART_COLORS[0] },
-  { symbol: "QQQ",    display: "QQQ", name: "Nasdaq 100 ETF", color: CHART_COLORS[1] },
-  { symbol: "SPY",    display: "SPY", name: "S&P 500 ETF", color: CHART_COLORS[2] },
 ];
 
 const CHART_TZ = "America/New_York";
