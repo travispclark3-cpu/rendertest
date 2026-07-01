@@ -23,7 +23,9 @@ const CHART_COLORS = [
 
 /* ─── Types ────────────────────────────────────────────────────────────────── */
 interface Bar { time: number; open: number; high: number; low: number; close: number; volume: number; }
-interface ChartData { bars: Bar[]; price: number; change: number; changePct: number; name: string; }
+interface ChartData { bars: Bar[]; price: number; change: number; changePct: number; name: string; prevClose: number; }
+interface HoverRow { display: string; color: string; price: number; pct: number; }
+interface PricePoint { time: UTCTimestamp; value: number; }
 interface Hit { symbol: string; display: string; name: string; type: string; }
 interface ChartSym { symbol: string; display: string; name: string; color: string; }
 
@@ -52,14 +54,63 @@ function chartTimeOptions(timeVisible: boolean) {
   };
 }
 
-function normalizeBars(bars: Bar[]): { time: UTCTimestamp; value: number }[] {
+function normalizeBars(bars: Bar[], prevClose: number, range: string): { time: UTCTimestamp; value: number }[] {
   if (bars.length === 0) return [];
-  const base = bars[0].close;
+  const base = range === "1d"
+    ? (prevClose || bars[0]?.close || 0)
+    : (bars[0]?.close || prevClose || 0);
   if (base === 0) return [];
   return bars.map(b => ({
     time: b.time as UTCTimestamp,
     value: ((b.close - base) / base) * 100,
   }));
+}
+
+function closePoints(bars: Bar[]): PricePoint[] {
+  return bars.map(b => ({ time: b.time as UTCTimestamp, value: b.close }));
+}
+
+function priceAtTime(data: PricePoint[], t: number): number | null {
+  if (data.length === 0) return null;
+  let lo = 0;
+  let hi = data.length - 1;
+  let best = -1;
+  while (lo <= hi) {
+    const mid = (lo + hi) >> 1;
+    if (data[mid].time <= t) { best = mid; lo = mid + 1; }
+    else hi = mid - 1;
+  }
+  return best >= 0 ? data[best].value : null;
+}
+
+function etParts(date: Date) {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: CHART_TZ,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  }).formatToParts(date);
+  const get = (type: string) => Number(parts.find(p => p.type === type)?.value ?? 0);
+  return { year: get("year"), month: get("month"), day: get("day"), hour: get("hour"), minute: get("minute") };
+}
+
+function etSessionUnix(hour: number, minute: number, date = new Date()): number {
+  const { year, month, day } = etParts(date);
+  for (const offset of [4, 5]) {
+    const ms = Date.UTC(year, month - 1, day, hour + offset, minute, 0);
+    const p = etParts(new Date(ms));
+    if (p.year === year && p.month === month && p.day === day && p.hour === hour && p.minute === minute) {
+      return Math.floor(ms / 1000);
+    }
+  }
+  return Math.floor(Date.now() / 1000);
+}
+
+function formatPrice(price: number): string {
+  return price.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
 function usePersistedSymbols(): [ChartSym[], (s: ChartSym[]) => void] {
@@ -91,6 +142,10 @@ export default function ChartWidget() {
   const containerRef = useRef<HTMLDivElement>(null);
   const chartRef     = useRef<IChartApi | null>(null);
   const seriesRef    = useRef<Map<string, ISeriesApi<"Line">>>(new Map());
+  const closeDataRef = useRef<Map<string, PricePoint[]>>(new Map());
+  const prevCloseRef = useRef<Map<string, number>>(new Map());
+  const baselineRef  = useRef<Map<string, number>>(new Map());
+  const symbolsRef   = useRef<ChartSym[]>(DEFAULT_SYMBOLS);
   const fitKeyRef    = useRef("");
 
   const [symbols,  setSymbols]  = usePersistedSymbols();
@@ -98,6 +153,7 @@ export default function ChartWidget() {
   const [quotes,   setQuotes]   = useState<Record<string, { changePct: number }>>({});
   const [loading,  setLoading]  = useState(true);
   const [error,    setError]    = useState(false);
+  const [hoverRows, setHoverRows] = useState<HoverRow[] | null>(null);
 
   const [query,      setQuery]      = useState("");
   const [results,    setResults]    = useState<Hit[]>([]);
@@ -109,6 +165,8 @@ export default function ChartWidget() {
 
   const rng = RANGES[rangeIdx];
   const atMax = symbols.length >= MAX_SYMBOLS;
+
+  useEffect(() => { symbolsRef.current = symbols; }, [symbols]);
 
   /* ── Create chart once ─────────────────────────────────────────────────── */
   useEffect(() => {
@@ -140,10 +198,32 @@ export default function ChartWidget() {
 
     chartRef.current = chart;
 
+    chart.subscribeCrosshairMove(param => {
+      if (!param.time || param.point === undefined) {
+        setHoverRows(null);
+        return;
+      }
+      const t = param.time as number;
+      const rows: HoverRow[] = [];
+      for (const s of symbolsRef.current) {
+        const closes = closeDataRef.current.get(s.symbol);
+        const prevClose = prevCloseRef.current.get(s.symbol) ?? 0;
+        const baseline = baselineRef.current.get(s.symbol) ?? prevClose;
+        const price = closes ? priceAtTime(closes, t) : null;
+        if (price == null) continue;
+        const pct = baseline ? ((price - baseline) / baseline) * 100 : 0;
+        rows.push({ display: s.display, color: s.color, price, pct });
+      }
+      setHoverRows(rows.length ? rows : null);
+    });
+
     return () => {
       chart.remove();
       chartRef.current = null;
       seriesRef.current.clear();
+      closeDataRef.current.clear();
+      prevCloseRef.current.clear();
+      baselineRef.current.clear();
     };
   }, []);
 
@@ -200,7 +280,13 @@ export default function ChartWidget() {
         for (const { sym, json } of responses) {
           const series = seriesRef.current.get(sym.symbol);
           if (series && json.bars.length) {
-            series.setData(normalizeBars(json.bars));
+            const baseline = rng.range === "1d"
+              ? (json.prevClose || json.bars[0]?.close || 0)
+              : (json.bars[0]?.close || json.prevClose || 0);
+            prevCloseRef.current.set(sym.symbol, json.prevClose);
+            baselineRef.current.set(sym.symbol, baseline);
+            closeDataRef.current.set(sym.symbol, closePoints(json.bars));
+            series.setData(normalizeBars(json.bars, json.prevClose, rng.range));
           }
           nextQuotes[sym.symbol] = { changePct: json.changePct };
         }
@@ -209,7 +295,12 @@ export default function ChartWidget() {
         if (chartRef.current) {
           chartRef.current.applyOptions(chartTimeOptions(rng.timeVisible));
           const fitKey = `${symbols.map(s => s.symbol).join(",")}:${rng.range}:${rng.interval}`;
-          if (fitKeyRef.current !== fitKey) {
+          if (rng.range === "1d") {
+            const from = etSessionUnix(9, 30) as UTCTimestamp;
+            const to   = etSessionUnix(16, 0) as UTCTimestamp;
+            chartRef.current.timeScale().setVisibleRange({ from, to });
+            fitKeyRef.current = fitKey;
+          } else if (fitKeyRef.current !== fitKey) {
             fitKeyRef.current = fitKey;
             requestAnimationFrame(() => chartRef.current?.timeScale().fitContent());
           }
@@ -372,7 +463,31 @@ export default function ChartWidget() {
       </div>
 
       {/* ── Chart canvas ────────────────────────────────────────────────── */}
-      <div ref={containerRef} style={{ flex: 1, position: "relative", minHeight: 0 }} />
+      <div style={{ flex: 1, position: "relative", minHeight: 0 }}>
+        <div ref={containerRef} style={{ position: "absolute", inset: 0 }} />
+        {hoverRows && (
+          <div style={{
+            position: "absolute", top: 6, left: 8, zIndex: 5, pointerEvents: "none",
+            display: "flex", flexDirection: "column", gap: 3,
+            background: "rgba(8,13,20,0.92)", border: "1px solid #1a2030",
+            borderRadius: 4, padding: "5px 8px",
+          }}>
+            {hoverRows.map(row => {
+              const flat = Math.abs(row.pct) <= 0.09;
+              const pctClr = flat ? "#4a5570" : row.pct > 0 ? "#22c97a" : "#e84444";
+              const sign = row.pct >= 0 ? "+" : "";
+              return (
+                <div key={row.display} style={{ display: "flex", alignItems: "center", gap: 8, ...mono, fontSize: 10 }}>
+                  <span style={{ width: 8, height: 8, borderRadius: 2, background: row.color, flexShrink: 0 }} />
+                  <span style={{ fontWeight: 700, color: row.color, minWidth: 36 }}>{row.display}</span>
+                  <span style={{ color: "#e8edf5" }}>{formatPrice(row.price)}</span>
+                  <span style={{ color: pctClr }}>{sign}{row.pct.toFixed(2)}%</span>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
 
       {/* ── Range buttons ───────────────────────────────────────────────── */}
       <div style={{ flexShrink: 0, display: "flex", gap: 2, padding: "4px 8px", borderTop: "1px solid #1a2030" }}>
