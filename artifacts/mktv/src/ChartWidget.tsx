@@ -14,14 +14,27 @@ const RANGES = [
   { label: "ALL", range: "max", interval: "1mo", timeVisible: false },
 ] as const;
 
+const MAX_SYMBOLS = 10;
+
+const CHART_COLORS = [
+  "#22c97a", "#3b82f6", "#f59e0b", "#e84444", "#a855f7",
+  "#06b6d4", "#f97316", "#ec4899", "#84cc16", "#6366f1",
+];
+
 /* ─── Types ────────────────────────────────────────────────────────────────── */
 interface Bar { time: number; open: number; high: number; low: number; close: number; volume: number; }
 interface ChartData { bars: Bar[]; price: number; change: number; changePct: number; name: string; }
 interface Hit { symbol: string; display: string; name: string; type: string; }
-interface Sym { symbol: string; display: string; name: string; }
+interface ChartSym { symbol: string; display: string; name: string; color: string; }
 
-const DEFAULT: Sym = { symbol: "^GSPC", display: "SPX", name: "S&P 500" };
+const DEFAULT_SYMBOLS: ChartSym[] = [
+  { symbol: "^GSPC", display: "SPX", name: "S&P 500", color: CHART_COLORS[0] },
+  { symbol: "QQQ",    display: "QQQ", name: "Nasdaq 100 ETF", color: CHART_COLORS[1] },
+  { symbol: "SPY",    display: "SPY", name: "S&P 500 ETF", color: CHART_COLORS[2] },
+];
+
 const CHART_TZ = "America/New_York";
+const STORAGE_KEY = "mktv:chart-symbols";
 
 function formatChartTime(ts: number, withTime: boolean): string {
   return new Intl.DateTimeFormat("en-US", {
@@ -41,32 +54,50 @@ function chartTimeOptions(timeVisible: boolean) {
   };
 }
 
-function usePersistedSym(key: string): [Sym, (s: Sym) => void] {
-  const [sym, setSym] = useState<Sym>(() => {
+function normalizeBars(bars: Bar[]): { time: UTCTimestamp; value: number }[] {
+  if (bars.length === 0) return [];
+  const base = bars[0].close;
+  if (base === 0) return [];
+  return bars.map(b => ({
+    time: b.time as UTCTimestamp,
+    value: ((b.close - base) / base) * 100,
+  }));
+}
+
+function usePersistedSymbols(): [ChartSym[], (s: ChartSym[]) => void] {
+  const [symbols, setSymbols] = useState<ChartSym[]>(() => {
     try {
-      const raw = localStorage.getItem(`mktv:chart-sym:${key}`);
-      return raw ? (JSON.parse(raw) as Sym) : DEFAULT;
-    } catch { return DEFAULT; }
+      const raw = localStorage.getItem(STORAGE_KEY);
+      if (!raw) return DEFAULT_SYMBOLS;
+      const parsed = JSON.parse(raw) as ChartSym[];
+      return parsed.slice(0, MAX_SYMBOLS);
+    } catch { return DEFAULT_SYMBOLS; }
   });
-  const set = (s: Sym) => {
-    setSym(s);
-    try { localStorage.setItem(`mktv:chart-sym:${key}`, JSON.stringify(s)); } catch { /* ignore */ }
+  const set = (s: ChartSym[]) => {
+    const next = s.slice(0, MAX_SYMBOLS);
+    setSymbols(next);
+    try { localStorage.setItem(STORAGE_KEY, JSON.stringify(next)); } catch { /* ignore */ }
   };
-  return [sym, set];
+  return [symbols, set];
+}
+
+function nextColor(used: ChartSym[]): string {
+  const usedColors = new Set(used.map(s => s.color));
+  return CHART_COLORS.find(c => !usedColors.has(c)) ?? CHART_COLORS[used.length % CHART_COLORS.length];
 }
 
 const mono: React.CSSProperties = { fontFamily: "'IBM Plex Mono', monospace" };
 
 /* ─── ChartWidget ──────────────────────────────────────────────────────────── */
-export default function ChartWidget({ panelKey }: { panelKey: string }) {
+export default function ChartWidget() {
   const containerRef = useRef<HTMLDivElement>(null);
   const chartRef     = useRef<IChartApi | null>(null);
-  const seriesRef    = useRef<ISeriesApi<"Area"> | null>(null);
+  const seriesRef    = useRef<Map<string, ISeriesApi<"Line">>>(new Map());
   const fitKeyRef    = useRef("");
 
-  const [sym,      setSym]      = usePersistedSym(panelKey);
+  const [symbols,  setSymbols]  = usePersistedSymbols();
   const [rangeIdx, setRangeIdx] = useState(0);
-  const [data,     setData]     = useState<ChartData | null>(null);
+  const [quotes,   setQuotes]   = useState<Record<string, { changePct: number }>>({});
   const [loading,  setLoading]  = useState(true);
   const [error,    setError]    = useState(false);
 
@@ -79,6 +110,7 @@ export default function ChartWidget({ panelKey }: { panelKey: string }) {
   const dropRef  = useRef<HTMLDivElement>(null);
 
   const rng = RANGES[rangeIdx];
+  const atMax = symbols.length >= MAX_SYMBOLS;
 
   /* ── Create chart once ─────────────────────────────────────────────────── */
   useEffect(() => {
@@ -95,9 +127,12 @@ export default function ChartWidget({ panelKey }: { panelKey: string }) {
         vertLines: { color: "#1a2030" },
         horzLines: { color: "#1a2030" },
       },
-      rightPriceScale: { borderColor: "#1a2030" },
+      rightPriceScale: {
+        borderColor: "#1a2030",
+        scaleMargins: { top: 0.1, bottom: 0.1 },
+      },
       timeScale:        { borderColor: "#1a2030", secondsVisible: false, ...tzOpts.timeScale },
-      localization:     tzOpts.localization,
+      localization:     { ...tzOpts.localization, priceFormatter: (p: number) => `${p >= 0 ? "+" : ""}${p.toFixed(2)}%` },
       crosshair: {
         vertLine: { color: "#4a5570", labelBackgroundColor: "#1a2030" },
         horzLine: { color: "#4a5570", labelBackgroundColor: "#1a2030" },
@@ -105,46 +140,77 @@ export default function ChartWidget({ panelKey }: { panelKey: string }) {
       autoSize: true,
     });
 
-    const area = chart.addAreaSeries({
-      lineColor: "#22c97a",
-      topColor:  "rgba(34,201,122,0.22)",
-      bottomColor: "rgba(34,201,122,0.0)",
-      lineWidth: 2,
-      priceLineColor: "#22c97a",
-      lastValueVisible: true,
-    });
-
-    chartRef.current  = chart;
-    seriesRef.current = area;
+    chartRef.current = chart;
 
     return () => {
       chart.remove();
-      chartRef.current  = null;
-      seriesRef.current = null;
+      chartRef.current = null;
+      seriesRef.current.clear();
     };
   }, []);
 
+  /* ── Sync series with symbol list ──────────────────────────────────────── */
+  useEffect(() => {
+    const chart = chartRef.current;
+    if (!chart) return;
+
+    const existing = seriesRef.current;
+    const symSet = new Set(symbols.map(s => s.symbol));
+
+    for (const [sym, series] of existing) {
+      if (!symSet.has(sym)) {
+        chart.removeSeries(series);
+        existing.delete(sym);
+      }
+    }
+
+    for (const s of symbols) {
+      if (!existing.has(s.symbol)) {
+        const series = chart.addLineSeries({
+          color: s.color,
+          lineWidth: 2,
+          priceLineVisible: false,
+          lastValueVisible: false,
+          crosshairMarkerVisible: true,
+        });
+        existing.set(s.symbol, series);
+      } else {
+        existing.get(s.symbol)!.applyOptions({ color: s.color });
+      }
+    }
+  }, [symbols]);
+
   /* ── Fetch data & poll ─────────────────────────────────────────────────── */
   useEffect(() => {
+    if (symbols.length === 0) return;
     let cancelled = false;
     setLoading(true);
     setError(false);
 
     async function load() {
       try {
-        const res = await fetch(apiUrl(`/api/chart/${encodeURIComponent(sym.symbol)}?interval=${rng.interval}&range=${rng.range}`));
-        if (!res.ok) throw new Error();
-        const json: ChartData = await res.json();
+        const responses = await Promise.all(
+          symbols.map(s =>
+            fetch(apiUrl(`/api/chart/${encodeURIComponent(s.symbol)}?interval=${rng.interval}&range=${rng.range}`))
+              .then(r => r.ok ? r.json() as Promise<ChartData> : Promise.reject())
+              .then(json => ({ sym: s, json }))
+          )
+        );
         if (cancelled) return;
-        setData(json);
-        if (seriesRef.current && json.bars.length) {
-          seriesRef.current.setData(
-            json.bars.map(b => ({ time: b.time as UTCTimestamp, value: b.close }))
-          );
+
+        const nextQuotes: Record<string, { changePct: number }> = {};
+        for (const { sym, json } of responses) {
+          const series = seriesRef.current.get(sym.symbol);
+          if (series && json.bars.length) {
+            series.setData(normalizeBars(json.bars));
+          }
+          nextQuotes[sym.symbol] = { changePct: json.changePct };
         }
+        setQuotes(nextQuotes);
+
         if (chartRef.current) {
           chartRef.current.applyOptions(chartTimeOptions(rng.timeVisible));
-          const fitKey = `${sym.symbol}:${rng.range}:${rng.interval}`;
+          const fitKey = `${symbols.map(s => s.symbol).join(",")}:${rng.range}:${rng.interval}`;
           if (fitKeyRef.current !== fitKey) {
             fitKeyRef.current = fitKey;
             requestAnimationFrame(() => chartRef.current?.timeScale().fitContent());
@@ -160,7 +226,7 @@ export default function ChartWidget({ panelKey }: { panelKey: string }) {
     load();
     const iv = setInterval(load, 5_000);
     return () => { cancelled = true; clearInterval(iv); };
-  }, [sym.symbol, rng.interval, rng.range, rng.timeVisible]);
+  }, [symbols, rng.interval, rng.range, rng.timeVisible]);
 
   /* ── Symbol search ─────────────────────────────────────────────────────── */
   useEffect(() => {
@@ -170,12 +236,13 @@ export default function ChartWidget({ panelKey }: { panelKey: string }) {
       try {
         const r  = await fetch(apiUrl(`/api/ticker/search?q=${encodeURIComponent(query)}`));
         const j  = await r.json();
-        setResults(j.results ?? []);
+        const added = new Set(symbols.map(s => s.symbol));
+        setResults((j.results ?? []).filter((h: Hit) => !added.has(h.symbol)));
       } catch { setResults([]); }
       setSearching(false);
     }, 250);
     return () => clearTimeout(t);
-  }, [query]);
+  }, [query, symbols]);
 
   /* ── Fetch quote colors for search results ────────────────────────────── */
   useEffect(() => {
@@ -204,97 +271,106 @@ export default function ChartWidget({ panelKey }: { panelKey: string }) {
     return () => document.removeEventListener("mousedown", handler);
   }, []);
 
-  function selectSymbol(hit: Hit) {
-    setSym({ symbol: hit.symbol, display: hit.display, name: hit.name });
+  function addSymbol(hit: Hit) {
+    if (symbols.some(s => s.symbol === hit.symbol) || symbols.length >= MAX_SYMBOLS) return;
+    setSymbols([...symbols, {
+      symbol: hit.symbol,
+      display: hit.display,
+      name: hit.name,
+      color: nextColor(symbols),
+    }]);
     setQuery("");
     setResults([]);
     setDropOpen(false);
   }
 
-  const pct      = data?.changePct ?? 0;
-  const flat     = Math.abs(pct) <= 0.09;
-  const symColor = !data ? "#4a5570" : flat ? "#4a5570" : pct > 0 ? "#22c97a" : "#e84444";
-  const clr      = symColor;
-  const sign     = (data?.change ?? 0) >= 0 ? "+" : "";
+  function removeSymbol(sym: string) {
+    setSymbols(symbols.filter(s => s.symbol !== sym));
+  }
 
   return (
-    <div style={{ position: "absolute", inset: 0, display: "flex", flexDirection: "column", background: "#080d14", overflow: "hidden" }}>
+    <div style={{ height: "100%", display: "flex", flexDirection: "column", background: "#080d14", overflow: "hidden" }}>
 
-      {/* ── Search bar ──────────────────────────────────────────────────── */}
-      <div ref={dropRef} style={{ position: "relative", flexShrink: 0, padding: "5px 8px", borderBottom: "1px solid #1a2030" }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 8, background: "#0d1018", border: "1px solid #2a2f3d", borderRadius: 5, padding: "0 10px" }}>
-          <svg viewBox="0 0 24 24" style={{ width: 12, height: 12, fill: "#4a5570", flexShrink: 0 }}>
-            <path d="M15.5 14h-.79l-.28-.27A6.471 6.471 0 0 0 16 9.5 6.5 6.5 0 1 0 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z"/>
-          </svg>
-          <div style={{ flex: 1, position: "relative" }}>
-            {!query && (
-              <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", gap: 6, pointerEvents: "none" }}>
-                <span style={{ ...mono, fontSize: 10, fontWeight: 700, color: symColor }}>{sym.display}</span>
-                <span style={{ fontSize: 10, color: "#2a2f3d" }}>·</span>
-                <span style={{ fontSize: 10, color: symColor, opacity: 0.7, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{sym.name}</span>
-              </div>
-            )}
+      {/* ── Toolbar: search + legend ──────────────────────────────────────── */}
+      <div style={{ flexShrink: 0, display: "flex", alignItems: "center", gap: 8, padding: "5px 8px", borderBottom: "1px solid #1a2030", minHeight: 34 }}>
+        <div ref={dropRef} style={{ position: "relative", width: 200, flexShrink: 0 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 6, background: "#0d1018", border: "1px solid #2a2f3d", borderRadius: 5, padding: "0 8px" }}>
+            <svg viewBox="0 0 24 24" style={{ width: 11, height: 11, fill: "#4a5570", flexShrink: 0 }}>
+              <path d="M15.5 14h-.79l-.28-.27A6.471 6.471 0 0 0 16 9.5 6.5 6.5 0 1 0 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z"/>
+            </svg>
             <input
               ref={inputRef}
               value={query}
               onChange={e => { setQuery(e.target.value); setDropOpen(true); }}
               onFocus={() => setDropOpen(true)}
-              placeholder=""
-              style={{ width: "100%", background: "none", border: "none", outline: "none", color: "#fff", ...mono, fontSize: 10, padding: "7px 0" }}
+              placeholder={atMax ? "Max 10 symbols" : "Add symbol…"}
+              disabled={atMax}
+              style={{ flex: 1, background: "none", border: "none", outline: "none", color: atMax ? "#333" : "#fff", ...mono, fontSize: 10, padding: "6px 0" }}
             />
           </div>
-          {query && (
-            <button onClick={() => { setQuery(""); setResults([]); }} style={{ background: "none", border: "none", color: "#4a5570", cursor: "pointer", padding: 0, display: "flex" }}>
-              <svg viewBox="0 0 24 24" style={{ width: 11, height: 11, fill: "currentColor" }}><path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
-            </button>
+
+          {dropOpen && !atMax && (results.length > 0 || searching) && (
+            <div style={{ position: "absolute", top: "calc(100% + 4px)", left: 0, right: 0, background: "#0d1018", border: "1px solid #2a2f3d", borderRadius: 5, zIndex: 20, overflow: "hidden", boxShadow: "0 4px 16px rgba(0,0,0,.6)" }}>
+              {searching && results.length === 0 && (
+                <div style={{ padding: "9px 12px", ...mono, fontSize: 10, color: "#4a5570" }}>Searching…</div>
+              )}
+              {results.map(hit => {
+                const dir = quoteColors[hit.symbol];
+                const hc  = dir === "up" ? "#22c97a" : dir === "dn" ? "#e84444" : "#4a5570";
+                return (
+                  <button
+                    key={hit.symbol}
+                    onClick={() => addSymbol(hit)}
+                    style={{ display: "flex", alignItems: "center", gap: 10, width: "100%", padding: "8px 12px", background: "none", border: "none", borderBottom: "1px solid #1a2030", cursor: "pointer", textAlign: "left" }}
+                    onMouseEnter={e => (e.currentTarget.style.background = "#ffffff0a")}
+                    onMouseLeave={e => (e.currentTarget.style.background = "none")}
+                  >
+                    <span style={{ ...mono, fontSize: 10, fontWeight: 700, color: hc, minWidth: 52 }}>{hit.display}</span>
+                    <span style={{ fontSize: 10, color: hc, opacity: 0.7, flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{hit.name}</span>
+                  </button>
+                );
+              })}
+            </div>
           )}
         </div>
 
-        {dropOpen && (results.length > 0 || searching) && (
-          <div style={{ position: "absolute", top: "calc(100%)", left: 8, right: 8, background: "#0d1018", border: "1px solid #2a2f3d", borderRadius: 5, zIndex: 20, overflow: "hidden", boxShadow: "0 4px 16px rgba(0,0,0,.6)" }}>
-            {searching && results.length === 0 && (
-              <div style={{ padding: "9px 12px", ...mono, fontSize: 10, color: "#4a5570" }}>Searching…</div>
-            )}
-            {results.map(hit => {
-              const dir = quoteColors[hit.symbol];
-              const hc  = dir === "up" ? "#22c97a" : dir === "dn" ? "#e84444" : "#4a5570";
-              return (
-                <button
-                  key={hit.symbol}
-                  onClick={() => selectSymbol(hit)}
-                  style={{ display: "flex", alignItems: "center", gap: 10, width: "100%", padding: "8px 12px", background: "none", border: "none", borderBottom: "1px solid #1a2030", cursor: "pointer", textAlign: "left" }}
-                  onMouseEnter={e => (e.currentTarget.style.background = "#ffffff0a")}
-                  onMouseLeave={e => (e.currentTarget.style.background = "none")}
-                >
-                  <span style={{ ...mono, fontSize: 10, fontWeight: 700, color: hc, minWidth: 52 }}>{hit.display}</span>
-                  <span style={{ fontSize: 10, color: hc, opacity: 0.7, flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{hit.name}</span>
-                  <span style={{ fontSize: 9, color: "#333", flexShrink: 0 }}>{hit.type}</span>
-                </button>
-              );
-            })}
-          </div>
-        )}
-      </div>
+        {/* Legend */}
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 4, flex: 1, alignItems: "center", overflow: "hidden" }}>
+          {symbols.map(s => {
+            const pct = quotes[s.symbol]?.changePct ?? 0;
+            const flat = Math.abs(pct) <= 0.09;
+            const pctClr = flat ? "#4a5570" : pct > 0 ? "#22c97a" : "#e84444";
+            const sign = pct >= 0 ? "+" : "";
+            return (
+              <div
+                key={s.symbol}
+                title={s.name}
+                style={{ display: "flex", alignItems: "center", gap: 5, background: "#0d1018", border: "1px solid #1a2030", borderRadius: 4, padding: "2px 6px 2px 4px" }}
+              >
+                <span style={{ width: 8, height: 8, borderRadius: 2, background: s.color, flexShrink: 0 }} />
+                <span style={{ ...mono, fontSize: 9, fontWeight: 700, color: s.color }}>{s.display}</span>
+                <span style={{ ...mono, fontSize: 9, color: pctClr }}>{sign}{pct.toFixed(2)}%</span>
+                {symbols.length > 1 && (
+                  <button
+                    onClick={() => removeSymbol(s.symbol)}
+                    style={{ background: "none", border: "none", color: "#333", cursor: "pointer", padding: 0, display: "flex", lineHeight: 1 }}
+                    onMouseEnter={e => (e.currentTarget.style.color = "#e84444")}
+                    onMouseLeave={e => (e.currentTarget.style.color = "#333")}
+                    title={`Remove ${s.display}`}
+                  >
+                    <svg viewBox="0 0 24 24" style={{ width: 10, height: 10, fill: "currentColor" }}>
+                      <path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/>
+                    </svg>
+                  </button>
+                )}
+              </div>
+            );
+          })}
+        </div>
 
-      {/* ── Price header ────────────────────────────────────────────────── */}
-      <div style={{ flexShrink: 0, padding: "4px 10px 2px", display: "flex", alignItems: "baseline", gap: 8, minHeight: 26 }}>
-        {data && (
-          <>
-            <span style={{ ...mono, fontSize: 15, fontWeight: 700, color: "#fff" }}>
-              {data.price.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-            </span>
-            <span style={{ ...mono, fontSize: 10, color: clr }}>
-              {sign}{data.change.toFixed(2)}&nbsp;({sign}{data.changePct.toFixed(2)}%)
-            </span>
-            <span style={{ ...mono, fontSize: 9, color: "#333", marginLeft: "auto" }}>5s refresh</span>
-          </>
-        )}
-        {loading && !data && (
-          <span style={{ ...mono, fontSize: 10, color: "#4a5570" }}>Loading…</span>
-        )}
-        {error && !data && (
-          <span style={{ ...mono, fontSize: 10, color: "#e84444" }}>Failed to load</span>
-        )}
+        <span style={{ ...mono, fontSize: 9, color: "#333", flexShrink: 0 }}>
+          {loading && symbols.length > 0 ? "updating…" : error ? "error" : `${symbols.length}/${MAX_SYMBOLS}`}
+        </span>
       </div>
 
       {/* ── Chart canvas ────────────────────────────────────────────────── */}
@@ -324,9 +400,7 @@ export default function ChartWidget({ panelKey }: { panelKey: string }) {
           </button>
         ))}
         <div style={{ flex: 1 }} />
-        {loading && data && (
-          <span style={{ ...mono, fontSize: 9, color: "#333", alignSelf: "center" }}>updating…</span>
-        )}
+        <span style={{ ...mono, fontSize: 9, color: "#333", alignSelf: "center" }}>% change · 5s refresh</span>
       </div>
     </div>
   );

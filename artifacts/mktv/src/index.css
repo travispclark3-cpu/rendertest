@@ -59,6 +59,15 @@ html, body, #root {
 }
 #aud b { color: var(--wht); }
 
+/* ── Main content: video grid + chart ──────────────────────────────────── */
+#main {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+}
+
 /* ── 2×2 panel grid ───────────────────────────────────────────────────── */
 #grid {
   flex: 1;
@@ -69,6 +78,15 @@ html, body, #root {
   background: #000;
   overflow: hidden;
   min-height: 0;
+}
+
+#chart-panel {
+  flex-shrink: 0;
+  height: 32vh;
+  min-height: 180px;
+  max-height: 320px;
+  border-top: 2px solid #000;
+  overflow: hidden;
 }
 
 /* ── Individual panel ─────────────────────────────────────────────────── */
@@ -159,20 +177,6 @@ html, body, #root {
 }
 .panel:hover .ov { opacity: 1; }
 .panel.on .ov     { opacity: 1; }
-
-/* Chart mode: overlay pinned bottom-right, always slightly visible */
-.panel.chart-mode .ov {
-  left: auto;
-  right: 0;
-  width: auto;
-  background: rgba(0,0,0,.35);
-  height: 34px;
-  padding: 0 6px;
-  border-radius: 6px 0 0 0;
-  opacity: 0.55;
-}
-.panel.chart-mode:hover .ov { opacity: 0.55; }
-.panel.chart-mode .ov:hover { opacity: 1; }
 
 .oname {
   font-size: 9px;

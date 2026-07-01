@@ -390,9 +390,8 @@ function SettingsPanel({
 
 /* ─── Panel ───────────────────────────────────────────────────────────────── */
 type Status = "loading" | "live" | "offline" | "restricted";
-type PanelMode = "stream" | "chart";
 
-function Panel({ idx, ch, videoId, channelId, isActive, onSetAudio, subChannels, selectedSub, onSelectSub, mode, onToggleMode }: {
+function Panel({ idx, ch, videoId, channelId, isActive, onSetAudio, subChannels, selectedSub, onSelectSub }: {
   idx: number;
   ch: typeof CHANNELS[0];
   videoId: string;
@@ -402,8 +401,6 @@ function Panel({ idx, ch, videoId, channelId, isActive, onSetAudio, subChannels,
   subChannels?: typeof NEWS_SUBS;
   selectedSub?: string;
   onSelectSub?: (key: string) => void;
-  mode: PanelMode;
-  onToggleMode: () => void;
 }) {
   const mountRef       = useRef<HTMLDivElement>(null);
   const playerRef      = useRef<YT.Player | null>(null);
@@ -427,24 +424,14 @@ function Panel({ idx, ch, videoId, channelId, isActive, onSetAudio, subChannels,
     if (useChannelEmbed && !isActive) setEmbedMuted(true);
   }, [isActive, useChannelEmbed]);
 
-  useEffect(() => {
-    if (mode === "chart") {
-      try { playerRef.current?.destroy(); } catch { /* ignore */ }
-      playerRef.current = null;
-      setStatus("offline");
-      setPlaying(false);
-    }
-  }, [mode]);
-
   // Channel-based iframe: treat as live immediately when it loads
   useEffect(() => {
-    if (mode === "chart" || !useChannelEmbed) return;
+    if (!useChannelEmbed) return;
     setStatus("live");
     setPlaying(true);
-  }, [useChannelEmbed, mode]);
+  }, [useChannelEmbed]);
 
   useEffect(() => {
-    if (mode === "chart") return;
     if (useChannelEmbed) return; // handled above
     if (!videoId) { setStatus("offline"); setPlaying(false); return; }
     setStatus("loading");
@@ -542,8 +529,8 @@ function Panel({ idx, ch, videoId, channelId, isActive, onSetAudio, subChannels,
     : "";
 
   return (
-    <div className={`panel${isActive ? " on" : ""}${maximized ? " maximized" : ""}${isNews ? " news" : ""}${mode === "chart" ? " chart-mode" : ""}`}>
-      <div style={{ position: "absolute", inset: 0, display: mode === "chart" ? "none" : undefined }}>
+    <div className={`panel${isActive ? " on" : ""}${maximized ? " maximized" : ""}${isNews ? " news" : ""}`}>
+      <div style={{ position: "absolute", inset: 0 }}>
         {useChannelEmbed ? (
           <iframe
             src={channelEmbedSrc}
@@ -556,13 +543,7 @@ function Panel({ idx, ch, videoId, channelId, isActive, onSetAudio, subChannels,
         )}
       </div>
 
-      {mode === "chart" && (
-        <div style={{ position: "absolute", inset: 0 }}>
-          <ChartWidget panelKey={ch.key} />
-        </div>
-      )}
-
-      {playing && mode === "stream" && <div style={{ position: "absolute", inset: 0, zIndex: 1 }} />}
+      {playing && <div style={{ position: "absolute", inset: 0, zIndex: 1 }} />}
 
       {isNews && (
         <div className="news-badge-corner">
@@ -594,7 +575,7 @@ function Panel({ idx, ch, videoId, channelId, isActive, onSetAudio, subChannels,
         </div>
       )}
 
-      {mode === "stream" && (status === "offline" || status === "loading") && (
+      {(status === "offline" || status === "loading") && (
         <div className="offscreen">
           <div className={`off-icon${status === "loading" ? " spinning" : ""}`}>
             {status === "loading" ? (
@@ -623,55 +604,34 @@ function Panel({ idx, ch, videoId, channelId, isActive, onSetAudio, subChannels,
       )}
 
       <div className="ov">
-        {mode === "stream" && (
-          <span className="oname">
-            {lines.map((l, i) => (
-              <React.Fragment key={i}>{l}{i < lines.length - 1 && <br />}</React.Fragment>
-            ))}
-          </span>
-        )}
+        <span className="oname">
+          {lines.map((l, i) => (
+            <React.Fragment key={i}>{l}{i < lines.length - 1 && <br />}</React.Fragment>
+          ))}
+        </span>
 
-        {mode === "stream" && isLive && <span className="live-badge">LIVE</span>}
-        {mode === "chart" && <span className="live-badge" style={{ background: "#22c97a" }}>CHART</span>}
+        {isLive && <span className="live-badge">LIVE</span>}
 
         <button
-          className="btn"
-          onClick={(e) => { e.stopPropagation(); onToggleMode(); }}
-          title={mode === "chart" ? "Switch to stream" : "Switch to chart"}
+          className={`btn${isActive ? " on" : ""}`}
+          onClick={(e) => {
+            e.stopPropagation();
+            onSetAudio(idx);
+            if (useChannelEmbed) setEmbedMuted(false);
+            else try { playerRef.current?.unMute(); } catch { /* not ready */ }
+          }}
+          title={isActive ? "Audio on" : "Switch audio here"}
         >
-          {mode === "chart" ? (
+          {isActive ? (
             <svg viewBox="0 0 24 24" style={{ width: 15, height: 15, fill: "currentColor", pointerEvents: "none" }}>
-              <path d="M21 3H3c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h5v2h8v-2h5c1.1 0 1.99-.9 1.99-2L23 5c0-1.1-.9-2-2-2zm0 14H3V5h18v12z"/>
+              <path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02z" />
             </svg>
           ) : (
             <svg viewBox="0 0 24 24" style={{ width: 15, height: 15, fill: "currentColor", pointerEvents: "none" }}>
-              <path d="M5 9.2h3V19H5zM10.6 5h2.8v14h-2.8zm5.6 8H19v6h-2.8z"/>
+              <path d="M16.5 12c0-1.77-1.02-3.29-2.5-4.03v2.21l2.45 2.45c.03-.2.05-.41.05-.63zm2.5 0c0 .94-.2 1.82-.54 2.64l1.51 1.51C20.63 14.91 21 13.5 21 12c0-4.28-2.99-7.86-7-8.77v2.06c2.89.86 5 3.54 5 6.71zM4.27 3L3 4.27 7.73 9H3v6h4l5 5v-6.73l4.25 4.25c-.67.52-1.42.93-2.25 1.18v2.06c1.38-.31 2.63-.95 3.69-1.81L19.73 21 21 19.73l-9-9L4.27 3zM12 4L9.91 6.09 12 8.18V4z" />
             </svg>
           )}
         </button>
-
-        {mode === "stream" && (
-          <button
-            className={`btn${isActive ? " on" : ""}`}
-            onClick={(e) => {
-              e.stopPropagation();
-              onSetAudio(idx);
-              if (useChannelEmbed) setEmbedMuted(false);
-              else try { playerRef.current?.unMute(); } catch { /* not ready */ }
-            }}
-            title={isActive ? "Audio on" : "Switch audio here"}
-          >
-            {isActive ? (
-              <svg viewBox="0 0 24 24" style={{ width: 15, height: 15, fill: "currentColor", pointerEvents: "none" }}>
-                <path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02z" />
-              </svg>
-            ) : (
-              <svg viewBox="0 0 24 24" style={{ width: 15, height: 15, fill: "currentColor", pointerEvents: "none" }}>
-                <path d="M16.5 12c0-1.77-1.02-3.29-2.5-4.03v2.21l2.45 2.45c.03-.2.05-.41.05-.63zm2.5 0c0 .94-.2 1.82-.54 2.64l1.51 1.51C20.63 14.91 21 13.5 21 12c0-4.28-2.99-7.86-7-8.77v2.06c2.89.86 5 3.54 5 6.71zM4.27 3L3 4.27 7.73 9H3v6h4l5 5v-6.73l4.25 4.25c-.67.52-1.42.93-2.25 1.18v2.06c1.38-.31 2.63-.95 3.69-1.81L19.73 21 21 19.73l-9-9L4.27 3zM12 4L9.91 6.09 12 8.18V4z" />
-              </svg>
-            )}
-          </button>
-        )}
 
         <button
           className={`btn${maximized ? " on" : ""}`}
@@ -703,14 +663,6 @@ export default function App() {
     "mktv:tickers",
     DEFAULT_TICKERS,
   );
-  const [panelModes, setPanelModes] = useState<Record<string, PanelMode>>({
-    schwab: "chart",
-  });
-
-  function togglePanelMode(key: string) {
-    setPanelModes(prev => ({ ...prev, [key]: prev[key] === "chart" ? "stream" : "chart" }));
-  }
-
   useEffect(() => {
     async function refresh() {
       try {
@@ -750,29 +702,32 @@ export default function App() {
 
       <TickerTape tickers={tickers} />
 
-      <div id="grid">
-        {CHANNELS.map((ch, i) => {
-          const isNewsSlot = ch.key === "news";
-          const videoId    = isNewsSlot ? (ids[newsSub] ?? "") : (ids[ch.key] ?? "");
-          const mode       = panelModes[ch.key] ?? "stream";
-          const activeSub  = isNewsSlot ? NEWS_SUBS.find(s => s.key === newsSub) : undefined;
-          return (
-            <Panel
-              key={ch.key}
-              idx={i}
-              ch={ch}
-              videoId={videoId}
-              channelId={isNewsSlot ? activeSub?.channelId : ("channelId" in ch ? ch.channelId : undefined)}
-              isActive={i === active}
-              onSetAudio={setActive}
-              subChannels={isNewsSlot ? NEWS_SUBS : undefined}
-              selectedSub={isNewsSlot ? newsSub : undefined}
-              onSelectSub={isNewsSlot ? (k) => setNewsSub(k as NewsSub) : undefined}
-              mode={mode}
-              onToggleMode={() => togglePanelMode(ch.key)}
-            />
-          );
-        })}
+      <div id="main">
+        <div id="grid">
+          {CHANNELS.map((ch, i) => {
+            const isNewsSlot = ch.key === "news";
+            const videoId    = isNewsSlot ? (ids[newsSub] ?? "") : (ids[ch.key] ?? "");
+            const activeSub  = isNewsSlot ? NEWS_SUBS.find(s => s.key === newsSub) : undefined;
+            return (
+              <Panel
+                key={ch.key}
+                idx={i}
+                ch={ch}
+                videoId={videoId}
+                channelId={isNewsSlot ? activeSub?.channelId : ("channelId" in ch ? ch.channelId : undefined)}
+                isActive={i === active}
+                onSetAudio={setActive}
+                subChannels={isNewsSlot ? NEWS_SUBS : undefined}
+                selectedSub={isNewsSlot ? newsSub : undefined}
+                onSelectSub={isNewsSlot ? (k) => setNewsSub(k as NewsSub) : undefined}
+              />
+            );
+          })}
+        </div>
+
+        <div id="chart-panel">
+          <ChartWidget />
+        </div>
       </div>
 
       <SettingsPanel
