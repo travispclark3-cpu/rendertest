@@ -42,7 +42,7 @@ router.get("/chart/:symbol", async (req, res) => {
     const change    = price - prevClose;
     const changePct = prevClose ? (change / prevClose) * 100 : 0;
 
-    res.json({ symbol: meta.symbol ?? symbol, name: meta.shortName ?? symbol, bars, price, change, changePct });
+    res.json({ symbol: meta.symbol ?? symbol, name: meta.shortName ?? symbol, bars, price, change, changePct, prevClose });
   } catch {
     res.status(503).json({ error: "Failed to fetch chart data" });
   }
